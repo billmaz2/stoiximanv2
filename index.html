@@ -20,8 +20,7 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: var(--base-100);
-      color: var(--content);
+      background: var(--base-100); color: var(--content);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       line-height: 1.6;
     }
@@ -60,7 +59,7 @@
 
     .toolbar {
       display: grid;
-      grid-template-columns: 1fr 1fr 1.2fr 0.8fr 0.8fr auto;
+      grid-template-columns: 1fr 1.4fr 1.2fr auto auto;
       gap: 10px; padding: 16px 20px; background: var(--base-200);
       border-radius: var(--radius); border: 1px solid var(--base-300);
       margin-bottom: 16px; align-items: center;
@@ -125,8 +124,7 @@
       gap: 6px; padding: 0 12px; background: transparent;
       font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
       letter-spacing: 0.04em; color: var(--content); cursor: pointer;
-      transition: color 0.15s; overflow: hidden;
-      text-overflow: ellipsis; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .grid-header button:hover { color: var(--primary); }
     .sort-icon { color: var(--muted); flex-shrink: 0; font-size: 0.7rem; }
@@ -154,10 +152,7 @@
       padding: 40px 20px; text-align: center; color: var(--muted);
     }
     .empty strong { display: block; color: var(--content); font-size: 1.15rem; margin-bottom: 4px; }
-    .empty code {
-      background: var(--base-300); padding: 2px 8px;
-      border-radius: 4px; font-size: 0.85rem;
-    }
+    .empty code { background: var(--base-300); padding: 2px 8px; border-radius: 4px; font-size: 0.85rem; }
     .empty .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.6; }
 
     .footer {
@@ -169,7 +164,7 @@
     .footer button {
       min-height: 34px; padding: 0 14px; border-radius: 6px;
       border: 1px solid var(--base-300); background: var(--base-100);
-      cursor: pointer; font: inherit; font-size: 0.82rem; transition: all 0.15s;
+      cursor: pointer; font: inherit; font-size: 0.82rem;
     }
     .footer button:hover:not(:disabled) { background: var(--base-300); }
     .footer button:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -185,9 +180,7 @@
     .progress-bar.complete { background: linear-gradient(90deg, var(--success), #4ade80); }
     .progress-bar.error { background: linear-gradient(90deg, var(--danger), #f87171); }
 
-    @media (max-width: 1100px) {
-      .toolbar { grid-template-columns: 1fr 1fr; gap: 8px; }
-    }
+    @media (max-width: 1100px) { .toolbar { grid-template-columns: 1fr 1fr; gap: 8px; } }
     @media (max-width: 540px) {
       .toolbar { grid-template-columns: 1fr; }
       .hero { padding: 24px 16px; }
@@ -205,22 +198,10 @@
     </header>
 
     <div class="stats-grid" id="statsGrid">
-      <div class="stat-card">
-        <div class="label">Total Records</div>
-        <div class="value blue" id="totalRecords">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">Showing</div>
-        <div class="value green" id="showingRecords">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">Columns</div>
-        <div class="value" id="columnCount">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">Status</div>
-        <div class="value" id="statusValue" style="font-size:1rem;font-weight:500;">Loading...</div>
-      </div>
+      <div class="stat-card"><div class="label">Total Records</div><div class="value blue" id="totalRecords">—</div></div>
+      <div class="stat-card"><div class="label">Showing</div><div class="value green" id="showingRecords">—</div></div>
+      <div class="stat-card"><div class="label">Columns</div><div class="value" id="columnCount">—</div></div>
+      <div class="stat-card"><div class="label">Status</div><div class="value" id="statusValue" style="font-size:1rem;font-weight:500;">Loading...</div></div>
     </div>
 
     <div class="toolbar">
@@ -293,14 +274,31 @@
       const progressBar = $('progressBar');
 
       let columns = [], totalRows = 0, resultCount = 0, resultBuffer = null;
-      let championshipColumn = -1, resultColumn = -1, startColumn = -1;
+      let championshipColumn = -1, resultColumn = -1, timeColumn = -1, dateColumn = -1;
       let sortColumn = -1, sortDirection = 1, queryTimer = null, requestId = 0;
       const rowHeight = 38, headerHeight = 42, overscan = 12, jumpSize = 1000;
-      let baseData = [];
+      let baseData = [];         // already-merged data (old + any imported)
       let baseDataLoaded = false;
+      let latestDate = '';
 
       const baseUrl = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
       const fileList = ['total_1.json','total_2.json','total_3.json','total_4.json','total_260905.json'];
+
+      // Build "yyyy-mm-dd hh:mm:ss" by combining 'date' + 'time' if needed
+      function buildDateTime(row) {
+        if (!row || typeof row !== 'object') return '';
+        const rawDate = row.date ?? row.Date ?? row.DATE ?? '';
+        const rawTime = row.time ?? row.Time ?? row.TIME ?? '';
+        // If time already contains a full datetime, keep as-is
+        if (typeof rawTime === 'string' && /^\d{4}-\d{2}-\d{2}/.test(rawTime)) {
+          return normalizeDateTime(rawTime);
+        }
+        if (rawDate && rawTime) {
+          return `${String(rawDate).slice(0,10)} ${String(rawTime).trim()}`.replace(/\s+/, ' ').trim();
+        }
+        if (rawTime) return normalizeDateTime(rawTime);
+        return '';
+      }
 
       function normalizeDateTime(value) {
         if (value === null || value === undefined || value === '') return '';
@@ -316,6 +314,20 @@
           return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
         }
         return s;
+      }
+
+      // Turn a raw row into a "new JSON" row:
+      // - drop 'kod'
+      // - combine date+time into one 'datetime' field (kept as 'time' so the old UI still works)
+      // Actually: user wants NO 'start' column, and they want a new column 'datetime'
+      // combined from date + time, merged with old json.
+      function transformRow(row) {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+        const { kod, ...rest } = row;
+        const dt = buildDateTime(row);
+        // We don't create 'start'. We replace 'time' with the full 'yyyy-mm-dd hh:mm:ss'
+        // so the existing table column 'time' shows the full datetime.
+        return { ...rest, time: dt };
       }
 
       const workerSource = `
@@ -344,55 +356,68 @@
               columns = [...names];
               values = rows.map(row => columns.map(column => text(row[column])));
               searchText = values.map(row => row.join('\\u001f').toLowerCase());
-              const championshipColumn = columns.findIndex(column => normalize(column).includes('championship'));
-              const startColumn = columns.findIndex(column => normalize(column) === 'start');
+
+              const championshipColumn = columns.findIndex(c => normalize(c).includes('championship'));
+              const timeColumn = columns.findIndex(c => normalize(c) === 'time');
+              const dateColumn = columns.findIndex(c => normalize(c) === 'date');
+
               const championshipOptions = championshipColumn >= 0
-                ? [...new Set(values.map(row => row[championshipColumn].trim()).filter(Boolean))]
+                ? [...new Set(values.map(r => r[championshipColumn].trim()).filter(Boolean))]
                     .sort((a,b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
                 : [];
-              // Determine latest date in 'start' column
+
+              // Determine latest date in 'time' (which now contains yyyy-mm-dd)
               let latestDate = '';
-              if (startColumn >= 0) {
+              if (timeColumn >= 0) {
                 for (let i = 0; i < values.length; i++) {
-                  const d = String(values[i][startColumn] || '').slice(0, 10);
-                  if (d && d > latestDate) latestDate = d;
+                  const d = String(values[i][timeColumn] || '').slice(0, 10);
+                  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(d) && d > latestDate) latestDate = d;
                 }
               }
-              const todayOptions = (championshipColumn >= 0 && latestDate)
+
+              // Today's championships = all championships with a game on latestDate
+              const todayOptions = (championshipColumn >= 0 && timeColumn >= 0 && latestDate)
                 ? [...new Set(
                     values
-                      .filter(row => String(row[startColumn] || '').startsWith(latestDate))
-                      .map(row => row[championshipColumn].trim())
+                      .filter(r => String(r[timeColumn] || '').startsWith(latestDate))
+                      .map(r => r[championshipColumn].trim())
                       .filter(Boolean)
                   )].sort((a,b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
                 : [];
+
               self.postMessage({
                 type: 'loaded', columns, count: rows.length,
                 championshipOptions, todayOptions, latestDate,
-                championshipColumn, startColumn
+                championshipColumn, timeColumn, dateColumn
               });
             }
+
             if (message.type === 'process') {
               const q = message.query.trim().toLowerCase();
               const championship = normalize(message.championship);
               const todayChampionship = normalize(message.todayChampionship);
               const todayDate = message.todayDate || '';
               let indexes = [];
+
               for (let i = 0; i < searchText.length; i++) {
                 const rowChampionship = message.championshipColumn >= 0 ? normalize(values[i][message.championshipColumn]) : '';
                 const matchesSearch = !q || searchText[i].includes(q);
                 const matchesChampionship = !championship || rowChampionship === championship;
                 const matchesTodayChamp = !todayChampionship || rowChampionship === todayChampionship;
-                const matchesTodayDate = !todayDate || (message.startColumn >= 0 && String(values[i][message.startColumn] || '').startsWith(todayDate));
+                const matchesTodayDate = !todayDate
+                  || (message.timeColumn >= 0 && String(values[i][message.timeColumn] || '').startsWith(todayDate));
                 if (matchesSearch && matchesChampionship && matchesTodayChamp && matchesTodayDate) indexes.push(i);
               }
+
               if (message.column >= 0) {
                 const column = message.column, direction = message.direction;
-                indexes.sort((left, right) => direction * compare(values[left][column] || '', values[right][column] || ''));
+                indexes.sort((l, r) => direction * compare(values[l][column] || '', values[r][column] || ''));
               }
+
               const result = new Uint32Array(indexes);
               self.postMessage({ type: 'result', id: message.id, count: result.length, indexes: result.buffer }, [result.buffer]);
             }
+
             if (message.type === 'rows') {
               const ordered = message.indexes ? new Uint32Array(message.indexes) : null;
               const output = [];
@@ -414,11 +439,7 @@
       try {
         const blob = new Blob([workerSource], { type: 'application/javascript' });
         worker = new Worker(URL.createObjectURL(blob));
-      } catch (error) {
-        showError('Failed to create Web Worker: ' + error.message);
-      }
-
-      let latestDate = '';
+      } catch (error) { showError('Failed to create Web Worker: ' + error.message); }
 
       async function loadAllFiles() {
         const totalFiles = fileList.length;
@@ -439,7 +460,11 @@
             const text = await response.text();
             try {
               const data = JSON.parse(text);
-              if (Array.isArray(data) && data.length > 0) { allRows = allRows.concat(data); successfulFiles++; }
+              if (Array.isArray(data) && data.length > 0) {
+                // Build the "new json" from raw rows: drop 'kod', merge date+time → 'time'
+                allRows = allRows.concat(data.map(transformRow));
+                successfulFiles++;
+              }
             } catch (parseError) { console.error(`Failed to parse ${fileName}:`, parseError); }
           } catch (error) { console.error(`Failed to load ${fileName}:`, error); }
           loadedCount++;
@@ -487,7 +512,8 @@
           columns = message.columns;
           totalRows = message.count;
           championshipColumn = message.championshipColumn;
-          startColumn = message.startColumn;
+          timeColumn = message.timeColumn;
+          dateColumn = message.dateColumn;
           resultColumn = findResultColumn(columns);
           latestDate = message.latestDate || '';
 
@@ -538,15 +564,10 @@
           catch (e) { throw new Error('Invalid JSON: ' + e.message); }
           if (!Array.isArray(importedData)) throw new Error('The JSON root must be an array.');
 
-          const transformed = importedData.map(row => {
-            if (row && typeof row === 'object' && !Array.isArray(row)) {
-              const { kod, time, ...rest } = row;
-              const rawStart = time ?? row.start ?? '';
-              return { ...rest, start: normalizeDateTime(rawStart) };
-            }
-            return row;
-          });
+          // Build new json from imported rows (drop 'kod', merge date+time into 'time')
+          const transformed = importedData.map(transformRow);
 
+          // Merge with old json
           const merged = (baseDataLoaded ? baseData : []).concat(transformed);
           baseData = merged; baseDataLoaded = true;
           processLoadedData(merged);
@@ -574,14 +595,13 @@
           championshipFilter.appendChild(o);
         });
         championshipFilter.disabled = options.length === 0;
-        showGames.disabled = championshipFilter.options.length <= 1 && todayFilter.options.length <= 1;
       }
 
       function populateTodayFilter(options, date) {
         todayFilter.innerHTML = '';
         const allOption = document.createElement('option');
         allOption.value = '';
-        allOption.textContent = date ? `📅 Today (${date})` : "📅 Today's championships";
+        allOption.textContent = date ? `📅 Today's championships (${date})` : "📅 Today's championships";
         todayFilter.appendChild(allOption);
         options.forEach(v => {
           const o = document.createElement('option');
@@ -589,6 +609,7 @@
           todayFilter.appendChild(o);
         });
         todayFilter.disabled = options.length === 0;
+        showGames.disabled = todayFilter.disabled && championshipFilter.disabled;
       }
 
       function configureGrid() {
@@ -631,7 +652,7 @@
           todayChampionship: todayFilter.value,
           todayDate: todayFilter.value ? latestDate : '',
           championshipColumn,
-          startColumn,
+          timeColumn,
           column: sortColumn,
           direction: sortDirection
         });
@@ -670,9 +691,9 @@
       }
 
       function findResultColumn(columnNames) {
-        const exact = columnNames.findIndex(column => column.trim().toLowerCase() === 'result');
+        const exact = columnNames.findIndex(c => c.trim().toLowerCase() === 'result');
         if (exact >= 0) return exact;
-        return columnNames.findIndex(column => /(^|[ _-])(result|outcome|prediction)([ _-]|$)/i.test(column.trim()));
+        return columnNames.findIndex(c => /(^|[ _-])(result|outcome|prediction)([ _-]|$)/i.test(c.trim()));
       }
 
       function resultClass(value) {
@@ -698,17 +719,26 @@
         clearTimeout(queryTimer);
         queryTimer = setTimeout(process, 180);
       });
-      todayFilter.addEventListener('change', process);
-      championshipFilter.addEventListener('change', () => {
-        showGames.disabled = !championshipFilter.value;
-        resultStatus.textContent = championshipFilter.value ? 'Press "Show selected" to apply filter.' : '';
+      todayFilter.addEventListener('change', () => {
+        showGames.disabled = !todayFilter.value && !championshipFilter.value;
       });
-      showGames.addEventListener('click', () => { if (championshipFilter.value) process(); });
+      championshipFilter.addEventListener('change', () => {
+        showGames.disabled = !championshipFilter.value && !todayFilter.value;
+        if (championshipFilter.value) resultStatus.textContent = 'Press "Show selected" to apply filter.';
+      });
+      showGames.addEventListener('click', () => {
+        // Always run process so the table shows all games for the selection
+        process();
+        const parts = [];
+        if (todayFilter.value) parts.push(`Today: ${todayFilter.value}`);
+        if (championshipFilter.value) parts.push(`Championship: ${championshipFilter.value}`);
+        if (parts.length) resultStatus.textContent = `Showing all games — ${parts.join(' · ')}`;
+      });
       reset.addEventListener('click', () => {
         search.value = '';
         todayFilter.value = '';
         championshipFilter.value = '';
-        showGames.disabled = championshipFilter.options.length <= 1;
+        showGames.disabled = todayFilter.disabled && championshipFilter.disabled;
         sortColumn = -1; sortDirection = 1;
         updateSortIndicators();
         process();
