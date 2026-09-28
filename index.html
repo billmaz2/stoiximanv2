@@ -192,7 +192,6 @@
         return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
       }
 
-      // Pull hh:mm:ss out of whatever is in the imported 'time' column
       function extractHour(value) {
         if (value === null || value === undefined) return '';
         const s = String(value).trim();
@@ -203,14 +202,13 @@
         return '';
       }
 
-      // Imported row → drop 'kod', take hour from 'time', build 'datetime' first
+      // imported row: drop kod, drop time, build datetime first with today's date
       function transformImported(row) {
         if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
-        const { kod, time, ...rest } = row;
-        const hour = extractHour(time);
-        const datetime = hour ? `${todayDate()} ${hour}` : '';
-        // datetime FIRST
-        return { datetime, ...rest };
+        const { kod, time, datetime, ...rest } = row;
+        const hour = extractHour(time || datetime || '');
+        const newDatetime = hour ? `${todayDate()} ${hour}` : '';
+        return { datetime: newDatetime, ...rest };
       }
 
       const workerSource = `
@@ -235,10 +233,10 @@
               if (!Array.isArray(parsed)) throw new Error('The JSON root must be an array.');
               rows = parsed.map(item => (item && typeof item === 'object' && !Array.isArray(item)) ? item : { value: item });
 
-              // Ensure 'datetime' is first in column order
               const names = new Set();
               rows.forEach(row => Object.keys(row).forEach(key => names.add(key)));
               columns = [...names];
+              // Make 'datetime' first
               const di = columns.indexOf('datetime');
               if (di > 0) { columns.splice(di, 1); columns.unshift('datetime'); }
               else if (di < 0) { columns.unshift('datetime'); }
@@ -246,7 +244,7 @@
               values = rows.map(row => columns.map(column => text(row[column])));
               searchText = values.map(row => row.join('\\u001f').toLowerCase());
 
-              const championshipColumn = columns.findIndex(c => normalize(c).includes('championship'));
+              const championshipColumn = columns.findIndex(c => normalize(c) === 'championship');
               const datetimeColumn = columns.findIndex(c => normalize(c) === 'datetime');
 
               const championshipOptions = championshipColumn >= 0
