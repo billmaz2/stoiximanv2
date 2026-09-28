@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fast JSON Table Viewer - Auto Load</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-content: #fff;
+      --base-100: #f8fafc;
+      --base-200: #fff;
+      --base-300: #e2e8f0;
+      --content: #0f172a;
+      --muted: #64748b;
+      --success: #16a34a;
+      --danger: #b91c1c;
+      --row-height: 38px;
+      --header-height: 42px;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--base-100);
+      color: var(--content);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.6;
+    }
+
+    .presentation {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 20px 24px 40px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      color: white;
+      padding: 48px 56px;
+      border-radius: var(--radius);
+      margin-bottom: 32px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '⚡';
+      position: absolute;
+      right: 40px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 80px;
+      opacity: 0.15;
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 8px;
+    }
+    .hero .subtitle {
+      font-size: clamp(1rem, 1.5vw, 1.25rem);
+      opacity: 0.85;
+      max-width: 600px;
+    }
+    .hero .badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.12);
+      padding: 4px 16px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      margin-top: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--base-200);
+      padding: 16px 20px;
+      border-radius: var(--radius);
+      border: 1px solid var(--base-300);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .stat-card .label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .stat-card .value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+    .stat-card .value.green { color: var(--success); }
+    .stat-card .value.blue { color: var(--primary); }
+    .stat-card .value.orange { color: #f59e0b; }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr 0.8fr 0.8fr auto;
+      gap: 10px;
+      padding: 16px 20px;
+      background: var(--base-200);
+      border-radius: var(--radius);
+      border: 1px solid var(--base-300);
+      margin-bottom: 16px;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .toolbar input,
+    .toolbar select,
+    .toolbar button {
+      min-height: 40px;
+      border-radius: 8px;
+      border: 1px solid var(--base-300);
+      font: inherit;
+      padding: 0 14px;
+      background: var(--base-100);
+      color: var(--content);
+      outline: none;
+      transition: all 0.15s;
+    }
+    .toolbar input:focus,
+    .toolbar select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .toolbar select:disabled { opacity: 0.5; cursor: not-allowed; }
+    .toolbar button {
+      cursor: pointer;
+      background: var(--base-300);
+      border-color: var(--base-300);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .toolbar button:hover:not(:disabled) { filter: brightness(0.95); }
+    .toolbar button.primary {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+    .toolbar button.primary:hover:not(:disabled) { background: #1d4ed8; }
+    .toolbar label.primary {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+      padding: 0 16px;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      min-height: 40px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .toolbar label.primary:hover { background: #1d4ed8; }
+    .toolbar label input { display: none; }
+    .toolbar button.reset { background: transparent; border-color: var(--base-300); }
+
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 8px 4px 12px;
+      font-size: 0.9rem;
+      color: var(--muted);
+      flex-wrap: wrap;
+    }
+    .status-bar .file-status.success { color: var(--success); }
+    .status-bar .file-status.error { color: var(--danger); }
+    .status-bar .file-status.loading { color: #f59e0b; }
+    .status-bar .result-count { font-weight: 600; color: var(--content); }
+
+    .viewer-panel {
+      background: var(--base-200);
+      border-radius: var(--radius);
+      border: 1px solid var(--base-300);
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .viewport {
+      height: 65vh;
+      min-height: 400px;
+      overflow: auto;
+      position: relative;
+      background: var(--base-200);
+    }
+    .stage {
+      position: relative;
+      min-width: 100%;
+    }
+    .grid-header,
+    .grid-row {
+      display: grid;
+      grid-template-columns: var(--grid-columns);
+      min-width: var(--grid-width, 100%);
+    }
+    .grid-header {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      height: var(--header-height);
+      background: var(--base-300);
+      border-bottom: 2px solid var(--base-300);
+    }
+    .grid-header button {
+      border: 0;
+      border-radius: 0;
+      min-height: var(--header-height);
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 6px;
+      padding: 0 12px;
+      background: transparent;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--content);
+      cursor: pointer;
+      transition: color 0.15s;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .grid-header button:hover { color: var(--primary); }
+    .sort-icon { color: var(--muted); flex-shrink: 0; font-size: 0.7rem; }
+    .content {
+      position: relative;
+      height: 0;
+    }
+    .grid-row {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: var(--row-height);
+      align-items: stretch;
+      border-bottom: 1px solid var(--base-300);
+      background: var(--base-200);
+      transition: background 0.1s;
+    }
+    .grid-row:nth-child(even) { background: #fafbfc; }
+    .grid-row:hover { background: #eff6ff; }
+    
+    .grid-row.result-1 { background: #dcfce7 !important; }
+    .grid-row.result-1:hover { background: #bbf7d0 !important; }
+    .grid-row.result-1:nth-child(even) { background: #dcfce7 !important; }
+    .grid-row.result-x { background: #fef9c3 !important; }
+    .grid-row.result-x:hover { background: #fef08a !important; }
+    .grid-row.result-x:nth-child(even) { background: #fef9c3 !important; }
+    .grid-row.result-2 { background: #fee2e2 !important; }
+    .grid-row.result-2:hover { background: #fecaca !important; }
+    .grid-row.result-2:nth-child(even) { background: #fee2e2 !important; }
+    
+    .cell {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 8px 12px;
+      line-height: 22px;
+      font-size: 0.88rem;
+    }
+
+    .empty {
+      min-height: 320px;
+      display: grid;
+      place-items: center;
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--muted);
+    }
+    .empty strong { display: block; color: var(--content); font-size: 1.15rem; margin-bottom: 4px; }
+    .empty code {
+      background: var(--base-300);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+    .empty .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.6; }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 20px;
+      border-top: 1px solid var(--base-300);
+      color: var(--muted);
+      font-size: 0.88rem;
+      flex-wrap: wrap;
+    }
+    .footer-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+    .footer button {
+      min-height: 34px;
+      padding: 0 14px;
+      border-radius: 6px;
+      border: 1px solid var(--base-300);
+      background: var(--base-100);
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.82rem;
+      transition: all 0.15s;
+    }
+    .footer button:hover:not(:disabled) { background: var(--base-300); }
+    .footer button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .progress-container {
+      width: 100%;
+      height: 8px;
+      background: var(--base-300);
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 8px 0 12px 0;
+      position: relative;
+    }
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary), #60a5fa);
+      width: 0%;
+      transition: width 0.4s ease;
+      border-radius: 4px;
+      position: relative;
+    }
+    .progress-bar.complete { 
+      background: linear-gradient(90deg, var(--success), #4ade80);
+    }
+    .progress-bar.error { 
+      background: linear-gradient(90deg, var(--danger), #f87171);
+    }
+    .progress-text {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--base-200);
+      padding: 0 6px;
+      border-radius: 3px;
+    }
+
+    @media (max-width: 860px) {
+      .toolbar {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .hero { padding: 32px 24px; }
+      .hero::before { font-size: 48px; right: 20px; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 540px) {
+      .toolbar { grid-template-columns: 1fr; }
+      .hero { padding: 24px 16px; }
+      .hero::before { display: none; }
+      .stats-grid { grid-template-columns: 1fr; }
+      .footer { flex-direction: column; align-items: stretch; }
+      .footer-controls { justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="presentation">
+    <header class="hero">
+      <h1>⚡ Fast JSON Table Viewer</h1>
+      <p class="subtitle">Automatically loads all <code>total_*.json</code> files from the server</p>
+      <span class="badge">🚀 Auto-load · Progress tracking · Virtual scrolling · Result coloring</span>
+    </header>
+
+    <div class="stats-grid" id="statsGrid">
+      <div class="stat-card">
+        <div class="label">Total Records</div>
+        <div class="value blue" id="totalRecords">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Showing</div>
+        <div class="value green" id="showingRecords">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Columns</div>
+        <div class="value" id="columnCount">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Status</div>
+        <div class="value" id="statusValue" style="font-size:1rem;font-weight:500;">Loading...</div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="🔍 Search all columns..." autocomplete="off">
+      <select id="championshipFilter" aria-label="Filter by championship" disabled>
+        <option value="">All championships</option>
+      </select>
+      <button id="showGames" class="primary" type="button" disabled>Show selected</button>
+      <label class="primary">📂 Import JSON<input id="file" type="file" accept=".json,application/json"></label>
+      <button id="reset" class="reset" type="button">↺ Reset</button>
+    </div>
+
+    <div class="status-bar">
+      <span class="file-status" id="fileStatus">⏳ Loading files...</span>
+      <span class="result-count" id="resultStatus"></span>
+    </div>
+    
+    <div class="progress-container">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+
+    <div class="viewer-panel">
+      <div id="empty" class="empty">
+        <div>
+          <div class="icon">📄</div>
+          <strong>Loading data from server...</strong>
+          <p style="margin-top:6px;">Looking for <code>total_*.json</code> files in the current directory</p>
+          <p style="margin-top:10px;font-size:0.85rem;color:#999;">⏳ Please wait while files are being loaded</p>
+        </div>
+      </div>
+      <div id="viewport" class="viewport" hidden>
+        <div id="stage" class="stage">
+          <div id="header" class="grid-header"></div>
+          <div id="content" class="content"></div>
+        </div>
+      </div>
+      <div id="footer" class="footer" hidden>
+        <span id="pageInfo">Rows loaded</span>
+        <div class="footer-controls">
+          <button id="top" type="button">⬆ Top</button>
+          <button id="previous" type="button">◀ Previous 1,000</button>
+          <button id="next" type="button">Next 1,000 ▶</button>
+        </div>
+      </div>
+    </div>
+
+    <p style="margin-top:14px;font-size:0.82rem;color:var(--muted);text-align:center;">
+      💡 Automatically loads all <code>total_*.json</code> files on startup. Use "Import JSON" to manually upload files.
+    </p>
+  </div>
+
+  <script>
+    (() => {
+      console.log('🚀 App starting... Auto-load mode enabled');
+      
+      const $ = id => document.getElementById(id);
+      const file = $('file'), search = $('search'), championshipFilter = $('championshipFilter'), showGames = $('showGames'), reset = $('reset');
+      const fileStatus = $('fileStatus'), resultStatus = $('resultStatus');
+      const empty = $('empty'), viewport = $('viewport'), stage = $('stage');
+      const header = $('header'), content = $('content'), footer = $('footer');
+      const pageInfo = $('pageInfo'), topButton = $('top'), previous = $('previous'), next = $('next');
+      const totalRecords = $('totalRecords'), showingRecords = $('showingRecords'), columnCount = $('columnCount'), statusValue = $('statusValue');
+      const progressBar = $('progressBar');
+
+      let columns = [], totalRows = 0, resultCount = 0, resultBuffer = null;
+      let championshipColumn = -1, resultColumn = -1;
+      let sortColumn = -1, sortDirection = 1, queryTimer = null, requestId = 0;
+      const rowHeight = 38, headerHeight = 42, overscan = 12, jumpSize = 1000;
+      let allDataLoaded = false;
+      let baseData = [];        // holds all auto-loaded data
+      let baseDataLoaded = false;
+
+      const baseUrl = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
+      console.log('📁 Base URL:', baseUrl);
+
+      const fileList = [
+        'total_1.json',
+        'total_2.json',
+        'total_3.json',
+        'total_4.json',
+        'total_260905.json'
+      ];
+
+      const workerSource = `
+        let rows = [], columns = [], searchText = [], values = [];
+        const text = value => {
+          if (value === null || value === undefined) return '';
+          if (typeof value === 'object') {
+            try { return JSON.stringify(value); } catch { return ''; }
+          }
+          return String(value);
+        };
+        const normalize = value => String(value ?? '').trim().replace(/\\s+/g, ' ').toLowerCase();
+        const compare = (a, b) => {
+          if (a === b) return 0;
+          const an = Number(a), bn = Number(b);
+          if (a !== '' && b !== '' && Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+          return a < b ? -1 : 1;
+        };
+        self.onmessage = event => {
+          const message = event.data;
+          try {
+            if (message.type === 'load') {
+              console.log('Worker: Loading data...');
+              const parsed = JSON.parse(message.source);
+              if (!Array.isArray(parsed)) throw new Error('The JSON root must be an array.');
+              rows = parsed.map(item => {
+                if (item && typeof item === 'object' && !Array.isArray(item)) return item;
+                return { value: item };
+              });
+              const names = new Set();
+              rows.forEach(row => Object.keys(row).forEach(key => names.add(key)));
+              columns = [...names];
+              values = rows.map(row => columns.map(column => text(row[column])));
+              searchText = values.map(row => row.join('\\u001f').toLowerCase());
+              const championshipColumn = columns.findIndex(column => normalize(column).includes('championship'));
+              const championshipOptions = championshipColumn >= 0
+                ? [...new Set(values.map(row => row[championshipColumn].trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+                : [];
+              console.log('Worker: Loaded', rows.length, 'rows,', columns.length, 'columns');
+              self.postMessage({ type: 'loaded', columns, count: rows.length, championshipOptions });
+            }
+            if (message.type === 'process') {
+              const q = message.query.trim().toLowerCase();
+              let indexes = [];
+              const championship = normalize(message.championship);
+              for (let i = 0; i < searchText.length; i++) {
+                const rowChampionship = message.championshipColumn >= 0
+                  ? normalize(values[i][message.championshipColumn])
+                  : '';
+                const matchesSearch = !q || searchText[i].includes(q);
+                const matchesChampionship = !championship || rowChampionship === championship;
+                if (matchesSearch && matchesChampionship) indexes.push(i);
+              }
+              if (message.column >= 0) {
+                const column = message.column, direction = message.direction;
+                indexes.sort((left, right) => direction * compare(values[left][column] || '', values[right][column] || ''));
+              }
+              const result = new Uint32Array(indexes);
+              console.log('Worker: Processed', result.length, 'results');
+              self.postMessage({ type: 'result', id: message.id, count: result.length, indexes: result.buffer }, [result.buffer]);
+            }
+            if (message.type === 'rows') {
+              const ordered = message.indexes ? new Uint32Array(message.indexes) : null;
+              const output = [];
+              for (let i = 0; i < message.length; i++) {
+                const position = message.start + i;
+                if (position >= message.count) break;
+                const sourceIndex = ordered ? ordered[position] : position;
+                output.push(values[sourceIndex]);
+              }
+              self.postMessage({ type: 'rows', id: message.id, start: message.start, rows: output });
+            }
+          } catch (error) {
+            console.error('Worker Error:', error);
+            self.postMessage({ type: 'error', message: error.message });
+          }
+        };
+      `;
+      
+      let worker;
+      try {
+        const blob = new Blob([workerSource], { type: 'application/javascript' });
+        const workerUrl = URL.createObjectURL(blob);
+        worker = new Worker(workerUrl);
+        console.log('✅ Web Worker created successfully');
+      } catch (error) {
+        console.error('❌ Failed to create worker:', error);
+        showError('Failed to create Web Worker: ' + error.message);
+      }
+
+      // Load all files automatically on startup
+      async function loadAllFiles() {
+        const totalFiles = fileList.length;
+        fileStatus.className = 'file-status loading';
+        fileStatus.textContent = `⏳ Loading ${totalFiles} files...`;
+        statusValue.textContent = 'Loading...';
+        statusValue.style.color = '#f59e0b';
+        progressBar.style.width = '0%';
+        progressBar.className = 'progress-bar';
+        
+        let allRows = [];
+        let loadedCount = 0;
+        let successfulFiles = 0;
+        
+        for (let i = 0; i < fileList.length; i++) {
+          const fileName = fileList[i];
+          try {
+            console.log(`📥 Attempting to load: ${fileName}`);
+            const response = await fetch(baseUrl + fileName);
+            
+            if (!response.ok) {
+              console.warn(`⚠️ File ${fileName} not found (${response.status})`);
+              loadedCount++;
+              updateProgress(loadedCount, totalFiles, successfulFiles);
+              continue;
+            }
+            
+            const text = await response.text();
+            console.log(`📄 ${fileName} loaded (${text.length} bytes)`);
+            
+            try {
+              const data = JSON.parse(text);
+              if (Array.isArray(data) && data.length > 0) {
+                allRows = allRows.concat(data);
+                successfulFiles++;
+                console.log(`✅ ${fileName}: ${data.length} records loaded (Total: ${allRows.length})`);
+              } else {
+                console.warn(`⚠️ ${fileName} is empty or not an array`);
+              }
+            } catch (parseError) {
+              console.error(`❌ Failed to parse ${fileName}:`, parseError);
+            }
+          } catch (error) {
+            console.error(`❌ Failed to load ${fileName}:`, error);
+          }
+          
+          loadedCount++;
+          updateProgress(loadedCount, totalFiles, successfulFiles);
+          
+          if (allRows.length > 0 && successfulFiles === 1 && !allDataLoaded) {
+            console.log(`📊 First file loaded, showing ${allRows.length} records`);
+            processLoadedData(allRows);
+            allDataLoaded = true;
+          }
+        }
+        
+        if (allRows.length > 0) {
+          console.log(`✅ All files loaded: ${allRows.length} total records from ${successfulFiles} files`);
+          baseData = allRows.slice();          // save base data for merging
+          baseDataLoaded = true;
+          processLoadedData(allRows);
+          fileStatus.className = 'file-status success';
+          fileStatus.textContent = `✅ Loaded ${allRows.length.toLocaleString()} records from ${successfulFiles} files`;
+          progressBar.className = 'progress-bar complete';
+          progressBar.style.width = '100%';
+          statusValue.textContent = 'Ready';
+          statusValue.style.color = 'var(--success)';
+        } else {
+          console.warn('⚠️ No data loaded from any file');
+          fileStatus.className = 'file-status error';
+          fileStatus.textContent = '❌ No data files found. Please use "Import JSON" to upload.';
+          progressBar.className = 'progress-bar error';
+          progressBar.style.width = '100%';
+          statusValue.textContent = 'No data';
+          statusValue.style.color = 'var(--danger)';
+          empty.hidden = false;
+        }
+      }
+
+      function updateProgress(loaded, total, successful) {
+        const percent = Math.min(Math.round((loaded / total) * 100), 100);
+        progressBar.style.width = percent + '%';
+        const successText = successful > 0 ? ` (${successful} found)` : '';
+        fileStatus.textContent = `⏳ Loading ${loaded}/${total} files${successText} (${percent}%)`;
+        console.log(`📊 Progress: ${loaded}/${total} (${percent}%) - ${successful} successful files`);
+      }
+
+      function processLoadedData(data) {
+        if (!data || data.length === 0) {
+          console.warn('⚠️ No data to process');
+          return;
+        }
+        worker.postMessage({ type: 'load', source: JSON.stringify(data) });
+      }
+
+      worker.addEventListener('message', event => {
+        const message = event.data;
+        console.log('📨 Worker message:', message.type);
+        
+        if (message.type === 'error') {
+          console.error('❌ Worker error:', message.message);
+          return showError(message.message);
+        }
+        
+        if (message.type === 'loaded') {
+          columns = message.columns;
+          totalRows = message.count;
+          championshipColumn = columns.findIndex(column => column.trim().toLowerCase().includes('championship'));
+          resultColumn = findResultColumn(columns);
+          
+          console.log('✅ Data loaded:', totalRows, 'rows,', columns.length, 'columns');
+          
+          populateChampionshipFilter(message.championshipOptions || []);
+          sortColumn = -1;
+          sortDirection = 1;
+          search.value = '';
+          
+          totalRecords.textContent = totalRows.toLocaleString();
+          columnCount.textContent = columns.length;
+          
+          configureGrid();
+          process();
+        }
+        
+        if (message.type === 'result' && message.id === requestId) {
+          resultBuffer = message.indexes;
+          resultCount = message.count;
+          resultStatus.textContent = `${resultCount.toLocaleString()} of ${totalRows.toLocaleString()} records`;
+          showingRecords.textContent = resultCount.toLocaleString();
+          
+          empty.hidden = true;
+          viewport.hidden = false;
+          footer.hidden = false;
+          content.style.height = `${resultCount * rowHeight}px`;
+          viewport.scrollTop = 0;
+          renderVisible();
+          updateButtons();
+        }
+        
+        if (message.type === 'rows' && message.id === requestId) {
+          renderRows(message.start, message.rows);
+        }
+      });
+
+      // ---------- Manual import with requested transformations ----------
+      file.addEventListener('change', async event => {
+        const selected = event.target.files[0];
+        if (!selected) return;
+        
+        console.log('📁 Manual import:', selected.name);
+        fileStatus.className = 'file-status loading';
+        fileStatus.textContent = `📖 Reading ${selected.name}...`;
+        resultStatus.textContent = '';
+        empty.hidden = true;
+        viewport.hidden = true;
+        footer.hidden = true;
+        statusValue.textContent = 'Loading...';
+        statusValue.style.color = 'var(--primary)';
+        progressBar.className = 'progress-bar';
+        progressBar.style.width = '50%';
+        
+        try {
+          const text = await selected.text();
+          if (!text || text.trim().length === 0) {
+            throw new Error('The file is empty');
+          }
+          
+          let importedData;
+          try {
+            importedData = JSON.parse(text);
+          } catch (parseError) {
+            throw new Error('Invalid JSON format: ' + parseError.message);
+          }
+          
+          if (!Array.isArray(importedData)) {
+            throw new Error('The JSON root must be an array.');
+          }
+
+          // 1. Drop the 'kod' column
+          // 2. Rename 'time' to 'start' (keep full datetime value)
+          const transformed = importedData.map(row => {
+            if (row && typeof row === 'object' && !Array.isArray(row)) {
+              const { kod, time, ...rest } = row;
+              return { ...rest, start: time ?? row.start };
+            }
+            return row;
+          });
+
+          // 3. Merge with already loaded base data
+          const base = baseDataLoaded ? baseData : [];
+          const merged = base.concat(transformed);
+
+          console.log(`🔀 Merging ${base.length} base rows with ${transformed.length} imported rows → ${merged.length} total`);
+
+          // Update baseData so subsequent imports stack correctly
+          baseData = merged;
+          baseDataLoaded = true;
+
+          // Send merged data to worker
+          worker.postMessage({ type: 'load', source: JSON.stringify(merged) });
+
+          progressBar.style.width = '100%';
+          progressBar.className = 'progress-bar complete';
+          fileStatus.className = 'file-status success';
+          fileStatus.textContent = `✅ ${selected.name} imported & merged (${transformed.length} rows added, total ${merged.length.toLocaleString()})`;
+          statusValue.textContent = 'Ready';
+          statusValue.style.color = 'var(--success)';
+        } catch (error) {
+          console.error('❌ Error reading file:', error);
+          progressBar.className = 'progress-bar error';
+          showError(error.message);
+        }
+      });
+
+      function populateChampionshipFilter(options) {
+        championshipFilter.innerHTML = '';
+        const allOption = document.createElement('option');
+        allOption.value = '';
+        allOption.textContent = options.length ? 'All championships' : 'No championship column';
+        championshipFilter.appendChild(allOption);
+        options.forEach(optionValue => {
+          const option = document.createElement('option');
+          option.value = optionValue;
+          option.textContent = optionValue;
+          championshipFilter.appendChild(option);
+        });
+        championshipFilter.disabled = options.length === 0;
+        showGames.disabled = championshipFilter.options.length <= 1;
+        console.log('🏆 Championship options:', options.length);
+      }
+
+      function configureGrid() {
+        const width = Math.max(800, columns.length * 160);
+        const template = columns.map(() => 'minmax(150px, 1fr)').join(' ');
+        stage.style.setProperty('--grid-width', `${width}px`);
+        stage.style.setProperty('--grid-columns', template);
+        header.innerHTML = '';
+        columns.forEach((column, index) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.title = `Sort by ${column}`;
+          button.textContent = column;
+          const icon = document.createElement('span');
+          icon.className = 'sort-icon';
+          icon.textContent = '↕';
+          button.appendChild(icon);
+          button.addEventListener('click', () => {
+            if (sortColumn === index) sortDirection *= -1;
+            else { sortColumn = index; sortDirection = 1; }
+            updateSortIndicators();
+            process();
+          });
+          header.appendChild(button);
+        });
+        updateSortIndicators();
+        console.log('📊 Grid configured with', columns.length, 'columns');
+      }
+
+      function updateSortIndicators() {
+        [...header.querySelectorAll('.sort-icon')].forEach((icon, index) => {
+          icon.textContent = sortColumn === index ? (sortDirection === 1 ? '▲' : '▼') : '↕';
+        });
+      }
+
+      function process() {
+        requestId++;
+        const id = requestId;
+        resultStatus.textContent = sortColumn >= 0 ? '⏳ Sorting and filtering…' : '⏳ Filtering…';
+        worker.postMessage({
+          type: 'process',
+          id,
+          query: search.value,
+          championship: championshipFilter.value,
+          championshipColumn,
+          column: sortColumn,
+          direction: sortDirection
+        });
+        console.log('🔄 Processing request:', id);
+      }
+
+      function requestRows(start, length) {
+        const id = requestId;
+        const indexes = resultBuffer ? resultBuffer.slice(0) : null;
+        worker.postMessage({ type: 'rows', id, start, length, count: resultCount, indexes }, indexes ? [indexes] : []);
+      }
+
+      function renderVisible() {
+        if (!resultCount) { content.innerHTML = ''; return; }
+        const scrollTop = Math.max(0, viewport.scrollTop - headerHeight);
+        const visible = Math.ceil(viewport.clientHeight / rowHeight) + overscan * 2;
+        const start = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan);
+        requestRows(start, visible);
+      }
+
+      function renderRows(start, rowData) {
+        content.innerHTML = '';
+        rowData.forEach((row, offset) => {
+          const rowElement = document.createElement('div');
+          const resultValue = row[resultColumn];
+          rowElement.className = `grid-row ${resultClass(resultValue)}`;
+          rowElement.style.top = `${(start + offset) * rowHeight}px`;
+          row.forEach(value => {
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.textContent = value;
+            cell.title = value;
+            rowElement.appendChild(cell);
+          });
+          content.appendChild(rowElement);
+        });
+      }
+
+      function findResultColumn(columnNames) {
+        const exact = columnNames.findIndex(column => column.trim().toLowerCase() === 'result');
+        if (exact >= 0) return exact;
+        return columnNames.findIndex(column => /(^|[ _-])(result|outcome|prediction)([ _-]|$)/i.test(column.trim()));
+      }
+
+      function resultClass(value) {
+        const result = String(value ?? '').trim().toUpperCase();
+        if (result === '1') return 'result-1';
+        if (result === 'X') return 'result-x';
+        if (result === '2') return 'result-2';
+        return '';
+      }
+
+      function updateButtons() {
+        const position = Math.max(0, Math.floor(Math.max(0, viewport.scrollTop - headerHeight) / rowHeight));
+        pageInfo.textContent = resultCount ? `Rows ${position + 1}–${Math.min(position + 1 + Math.ceil(viewport.clientHeight / rowHeight), resultCount).toLocaleString()} of ${resultCount.toLocaleString()}` : 'No matching records';
+        previous.disabled = position === 0;
+        next.disabled = position + jumpSize >= resultCount;
+      }
+
+      viewport.addEventListener('scroll', () => { renderVisible(); updateButtons(); });
+      window.addEventListener('resize', renderVisible);
+      search.addEventListener('input', () => {
+        clearTimeout(queryTimer);
+        queryTimer = setTimeout(process, 180);
+      });
+      championshipFilter.addEventListener('change', () => {
+        showGames.disabled = !championshipFilter.value;
+        resultStatus.textContent = championshipFilter.value ? 'Press "Show selected" to apply filter.' : '';
+      });
+      showGames.addEventListener('click', () => {
+        if (championshipFilter.value) process();
+      });
+      reset.addEventListener('click', () => {
+        search.value = '';
+        championshipFilter.value = '';
+        showGames.disabled = championshipFilter.options.length <= 1;
+        sortColumn = -1;
+        sortDirection = 1;
+        updateSortIndicators();
+        process();
+      });
+      topButton.addEventListener('click', () => { viewport.scrollTop = 0; renderVisible(); updateButtons(); });
+      previous.addEventListener('click', () => { viewport.scrollTop = Math.max(0, viewport.scrollTop - jumpSize * rowHeight); });
+      next.addEventListener('click', () => { viewport.scrollTop = Math.min(viewport.scrollHeight, viewport.scrollTop + jumpSize * rowHeight); });
+
+      function showError(message) {
+        console.error('❌ Error displayed:', message);
+        fileStatus.className = 'file-status error';
+        fileStatus.textContent = `❌ Error: ${message}`;
+        resultStatus.textContent = '';
+        empty.hidden = false;
+        viewport.hidden = true;
+        footer.hidden = true;
+        statusValue.textContent = 'Error';
+        statusValue.style.color = 'var(--danger)';
+        totalRecords.textContent = '—';
+        showingRecords.textContent = '—';
+        columnCount.textContent = '—';
+      }
+
+      console.log('🔄 Starting auto-load process...');
+      loadAllFiles();
+    })();
+  </script>
+</body>
+</html>
