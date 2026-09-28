@@ -177,7 +177,7 @@
       const progressBar = $('progressBar');
 
       let columns = [], totalRows = 0, resultCount = 0, resultBuffer = null;
-      let championshipColumn = -1, resultColumn = -1, datetimeColumn = -1;
+      let championshipColumn = -1, resultColumn = -1;
       let sortColumn = -1, sortDirection = 1, queryTimer = null, requestId = 0;
       const rowHeight = 38, headerHeight = 42, overscan = 12, jumpSize = 1000;
       let baseData = [];
@@ -202,11 +202,12 @@
         return '';
       }
 
-      // imported row: drop kod, drop time, build datetime first with today's date
+      // On import: drop 'kod', take the hour from 'time' (or existing 'datetime'),
+      // and put a NEW 'datetime' as the FIRST key.
       function transformImported(row) {
         if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
-        const { kod, time, datetime, ...rest } = row;
-        const hour = extractHour(time || datetime || '');
+        const { kod, time, ...rest } = row;
+        const hour = extractHour(time);
         const newDatetime = hour ? `${todayDate()} ${hour}` : '';
         return { datetime: newDatetime, ...rest };
       }
@@ -236,7 +237,8 @@
               const names = new Set();
               rows.forEach(row => Object.keys(row).forEach(key => names.add(key)));
               columns = [...names];
-              // Make 'datetime' first
+
+              // Make sure 'datetime' is first
               const di = columns.indexOf('datetime');
               if (di > 0) { columns.splice(di, 1); columns.unshift('datetime'); }
               else if (di < 0) { columns.unshift('datetime'); }
@@ -380,7 +382,6 @@
           columns = message.columns;
           totalRows = message.count;
           championshipColumn = message.championshipColumn;
-          datetimeColumn = message.datetimeColumn;
           resultColumn = findResultColumn(columns);
 
           populateChampionshipFilter(message.championshipOptions || []);
