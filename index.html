@@ -177,7 +177,7 @@
       const progressBar = $('progressBar');
 
       let columns = [], totalRows = 0, resultCount = 0, resultBuffer = null;
-      let championshipColumn = -1, resultColumn = -1, timeColumn = -1;
+      let championshipColumn = -1, resultColumn = -1, datetimeColumn = -1;
       let sortColumn = -1, sortDirection = 1, queryTimer = null, requestId = 0;
       const rowHeight = 38, headerHeight = 42, overscan = 12, jumpSize = 1000;
       let baseData = [];
@@ -186,40 +186,31 @@
       const baseUrl = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
       const fileList = ['total_1.json','total_2.json','total_3.json','total_4.json','total_260905.json'];
 
-      // Today's real system date → yyyy-mm-dd
       function todayDate() {
         const d = new Date();
         const pad = n => String(n).padStart(2, '0');
         return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
       }
 
-      // Extract hh:mm:ss from a value that may already be a full datetime or just time
+      // Pull hh:mm:ss out of whatever is in the imported 'time' column
       function extractHour(value) {
         if (value === null || value === undefined) return '';
         const s = String(value).trim();
-        // already full datetime → return time part
         let m = s.match(/^\d{4}-\d{2}-\d{2}[ T](\d{2}:\d{2}(?::\d{2})?)/);
         if (m) return m[1].length === 5 ? m[1] + ':00' : m[1];
-        // just time
         m = s.match(/^(\d{2}:\d{2}(?::\d{2})?)/);
         if (m) return m[1].length === 5 ? m[1] + ':00' : m[1];
         return '';
       }
 
-      // For imported rows: drop 'kod', and if there's a 'time' or 'start' column,
-      // replace its value with "today's date + hour from that column".
+      // Imported row → drop 'kod', take hour from 'time', build 'datetime' first
       function transformImported(row) {
         if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
-        const { kod, ...rest } = row;
-        const today = todayDate();
-        for (const key of Object.keys(rest)) {
-          const k = key.toLowerCase();
-          if (k === 'time' || k === 'start') {
-            const hour = extractHour(rest[key]);
-            rest[key] = hour ? `${today} ${hour}` : rest[key];
-          }
-        }
-        return rest;
+        const { kod, time, ...rest } = row;
+        const hour = extractHour(time);
+        const datetime = hour ? `${todayDate()} ${hour}` : '';
+        // datetime FIRST
+        return { datetime, ...rest };
       }
 
       const workerSource = `
@@ -243,28 +234,31 @@
               const parsed = JSON.parse(message.source);
               if (!Array.isArray(parsed)) throw new Error('The JSON root must be an array.');
               rows = parsed.map(item => (item && typeof item === 'object' && !Array.isArray(item)) ? item : { value: item });
+
+              // Ensure 'datetime' is first in column order
               const names = new Set();
               rows.forEach(row => Object.keys(row).forEach(key => names.add(key)));
               columns = [...names];
+              const di = columns.indexOf('datetime');
+              if (di > 0) { columns.splice(di, 1); columns.unshift('datetime'); }
+              else if (di < 0) { columns.unshift('datetime'); }
+
               values = rows.map(row => columns.map(column => text(row[column])));
               searchText = values.map(row => row.join('\\u001f').toLowerCase());
 
               const championshipColumn = columns.findIndex(c => normalize(c).includes('championship'));
-              // time column = 'time' or 'start'
-              let timeColumn = columns.findIndex(c => normalize(c) === 'time');
-              if (timeColumn < 0) timeColumn = columns.findIndex(c => normalize(c) === 'start');
+              const datetimeColumn = columns.findIndex(c => normalize(c) === 'datetime');
 
               const championshipOptions = championshipColumn >= 0
                 ? [...new Set(values.map(r => r[championshipColumn].trim()).filter(Boolean))]
                     .sort((a,b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
                 : [];
 
-              // Today's championships: rows whose time column starts with today's yyyy-mm-dd
               const today = message.today || '';
-              const todayOptions = (championshipColumn >= 0 && timeColumn >= 0 && today)
+              const todayOptions = (championshipColumn >= 0 && datetimeColumn >= 0 && today)
                 ? [...new Set(
                     values
-                      .filter(r => String(r[timeColumn] || '').startsWith(today))
+                      .filter(r => String(r[datetimeColumn] || '').startsWith(today))
                       .map(r => r[championshipColumn].trim())
                       .filter(Boolean)
                   )].sort((a,b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
@@ -273,15 +267,13 @@
               self.postMessage({
                 type: 'loaded', columns, count: rows.length,
                 championshipOptions, todayOptions,
-                championshipColumn, timeColumn
+                championshipColumn, datetimeColumn
               });
             }
 
             if (message.type === 'process') {
               const q = message.query.trim().toLowerCase();
               const championship = normalize(message.championship);
-              // When a championship is selected from today's dropdown, filter ONLY by
-              // that championship — no date restriction — so full history is shown.
               let indexes = [];
               for (let i = 0; i < searchText.length; i++) {
                 const rowChampionship = message.championshipColumn >= 0 ? normalize(values[i][message.championshipColumn]) : '';
@@ -289,12 +281,10 @@
                 const matchesChampionship = !championship || rowChampionship === championship;
                 if (matchesSearch && matchesChampionship) indexes.push(i);
               }
-
               if (message.column >= 0) {
                 const column = message.column, direction = message.direction;
                 indexes.sort((l, r) => direction * compare(values[l][column] || '', values[r][column] || ''));
               }
-
               const result = new Uint32Array(indexes);
               self.postMessage({ type: 'result', id: message.id, count: result.length, indexes: result.buffer }, [result.buffer]);
             }
@@ -342,7 +332,6 @@
             try {
               const data = JSON.parse(text);
               if (Array.isArray(data) && data.length > 0) {
-                // keep total_*.json column style untouched
                 allRows = allRows.concat(data);
                 successfulFiles++;
               }
@@ -393,7 +382,7 @@
           columns = message.columns;
           totalRows = message.count;
           championshipColumn = message.championshipColumn;
-          timeColumn = message.timeColumn;
+          datetimeColumn = message.datetimeColumn;
           resultColumn = findResultColumn(columns);
 
           populateChampionshipFilter(message.championshipOptions || []);
