@@ -33,7 +33,6 @@
     .stat-card .value.green { color: var(--success); }
     .stat-card .value.blue { color: var(--primary); }
 
-    /* toolbar now only has search + selects + show/reset */
     .toolbar { display: grid; grid-template-columns: 1fr 1.4fr 1.2fr auto auto; gap: 10px; padding: 16px 20px; background: var(--base-200); border-radius: var(--radius); border: 1px solid var(--base-300); margin-bottom: 8px; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
     .toolbar input, .toolbar select, .toolbar button { min-height: 40px; border-radius: 8px; border: 1px solid var(--base-300); font: inherit; padding: 0 14px; background: var(--base-100); color: var(--content); outline: none; transition: all 0.15s; }
     .toolbar input:focus, .toolbar select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
@@ -44,32 +43,8 @@
     .toolbar button.primary:hover:not(:disabled) { background: #1d4ed8; }
     .toolbar button.reset { background: transparent; border-color: var(--base-300); }
 
-    /* separate row for the import button, lower, painted red */
-    .import-row {
-      display: flex;
-      justify-content: flex-end;
-      padding: 0 20px 16px;
-      margin-bottom: 16px;
-      background: var(--base-200);
-      border: 1px solid var(--base-300);
-      border-top: none;
-      border-radius: 0 0 var(--radius) var(--radius);
-      margin-top: -8px;
-    }
-    .import-row label.import-btn {
-      background: #dc2626;
-      color: white;
-      border: 1px solid #b91c1c;
-      padding: 0 18px;
-      border-radius: 8px;
-      display: inline-flex;
-      align-items: center;
-      min-height: 42px;
-      cursor: pointer;
-      font-weight: 600;
-      box-shadow: 0 2px 6px rgba(220,38,38,0.3);
-      transition: all 0.15s;
-    }
+    .import-row { display: flex; justify-content: flex-end; padding: 0 20px 16px; margin-bottom: 16px; background: var(--base-200); border: 1px solid var(--base-300); border-top: none; border-radius: 0 0 var(--radius) var(--radius); margin-top: -8px; }
+    .import-row label.import-btn { background: #dc2626; color: white; border: 1px solid #b91c1c; padding: 0 18px; border-radius: 8px; display: inline-flex; align-items: center; min-height: 42px; cursor: pointer; font-weight: 600; box-shadow: 0 2px 6px rgba(220,38,38,0.3); transition: all 0.15s; }
     .import-row label.import-btn:hover { background: #b91c1c; box-shadow: 0 3px 10px rgba(220,38,38,0.45); }
     .import-row label.import-btn input { display: none; }
 
@@ -222,16 +197,48 @@
         return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
       }
 
+      // Accepts: "14" | "14.5" | "14:30" | "14:30:00" | "2024-07-20 14:30:00" | "2024-07-20T14:30:00"
+      // Returns "hh:mm:ss" or "".
       function extractHour(value) {
-        if (value === null || value === undefined) return '';
+        if (value === null || value === undefined || value === '') return '';
         const s = String(value).trim();
-        let m = s.match(/^\d{4}-\d{2}-\d{2}[ T](\d{2}:\d{2}(?::\d{2})?)/);
-        if (m) return m[1].length === 5 ? m[1] + ':00' : m[1];
-        m = s.match(/^(\d{2}:\d{2}(?::\d{2})?)/);
-        if (m) return m[1].length === 5 ? m[1] + ':00' : m[1];
+
+        // full datetime
+        let m = s.match(/^\d{4}-\d{2}-\d{2}[ T](\d{1,2})(?::(\d{2}))?(?::(\d{2}))?/);
+        if (m) {
+          const hh = String(m[1]).padStart(2, '0');
+          const mm = m[2] || '00';
+          const ss = m[3] || '00';
+          return `${hh}:${mm}:${ss}`;
+        }
+
+        // hh:mm:ss or hh:mm
+        m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+        if (m) {
+          const hh = String(m[1]).padStart(2, '0');
+          const mm = m[2];
+          const ss = m[3] || '00';
+          return `${hh}:${mm}:${ss}`;
+        }
+
+        // plain number: "14", "14.5", "9"
+        m = s.match(/^(\d{1,2})(?:\.(\d+))?$/);
+        if (m) {
+          const hh = String(m[1]).padStart(2, '0');
+          let mm = '00', ss = '00';
+          if (m[2]) {
+            const frac = parseFloat('0.' + m[2]);
+            const totalMinutes = Math.round(frac * 60);
+            mm = String(Math.floor(totalMinutes)).padStart(2, '0');
+            ss = String(Math.round((totalMinutes - Math.floor(totalMinutes)) * 60)).padStart(2, '0');
+          }
+          return `${hh}:${mm}:${ss}`;
+        }
+
         return '';
       }
 
+      // Imported row: drop 'kod' and 'time', build 'datetime' first = today's date + hour.
       function transformImported(row) {
         if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
         const { kod, time, ...rest } = row;
@@ -458,6 +465,7 @@
           if (!Array.isArray(importedData)) throw new Error('The JSON root must be an array.');
 
           const transformed = importedData.map(transformImported);
+          console.log('Imported first row after transform:', transformed[0]);
           const merged = (baseDataLoaded ? baseData : []).concat(transformed);
           baseData = merged; baseDataLoaded = true;
           processLoadedData(merged);
